@@ -80,6 +80,33 @@ Worker Node Setup:
 	kubectl get nodes
 
 
+#############################################################################################################################################################
+
+If you found any issue related to kube init follow below steps
+
+		kubeadm reset
+		
+		kubeadm init
+
+#############################################################################################################################################################
+
+If you found below error while doing kubeadm init
+Error: [kubelet-check] The HTTP call equal to 'curl -sSL http://localhost:10248/healthz' failed with error: Get http://localhost:10248/healthz: dial tcp 127.0.0.1:10248: connect: connection refused.
+
+
+Fix the error by following below command:
+1. created /etc/docker/daemon.json and added below:
+
+	{
+    "exec-opts": ["native.cgroupdriver=systemd"]
+	}
+	
+2. sudo systemctl daemon-reload
+3. sudo systemctl restart docker
+4. sudo systemctl restart kubelet
+
+#############################################################################################################################################################
+
 
 
 
