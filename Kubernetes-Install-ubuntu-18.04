@@ -1,0 +1,85 @@
+
+
+
+Kubernetes installation on ubuntu 18.04
+
+Prerequisites
+
+2 or more Linux servers running Ubuntu 18.04
+Access to a user account on each system with sudo or root privileges
+The apt package manager, included by default
+Command-line/terminal window (Ctrl–Alt–T)
+
+Step 1: Install Docker
+
+	    sudo apt-get update
+
+	    sudo apt-get install docker.io
+
+	    docker --version
+
+	    sudo systemctl enable docker
+
+	    sudo systemctl status docker
+
+To start Docker if it’s not running:
+
+	    sudo systemctl start docker
+
+
+Step 1: Install Kubernetes
+
+	    sudo apt-get install curl
+
+	    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add
+
+	    sudo apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+
+	    sudo apt-get install kubeadm kubelet kubectl
+
+	    sudo apt-mark hold kubeadm kubelet kubectl
+
+	    kubeadm version
+
+Make the system as Master node:
+
+	    sudo hostnamectl set-hostname master-node
+
+
+Initialize Kubernetes on Master:
+
+	    sudo kubeadm init 
+
+
+Once this command finishes, it will display a kubeadm join message at the end. Make a note of the whole entry. This will be used to join the worker nodes to the cluster.
+
+Next, enter the following to create a directory for the cluster:
+
+	    mkdir -p $HOME/.kube
+
+	    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+
+	    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+
+Step 9: Deploy Pod Network to Cluster
+A Pod Network is a way to allow communication between different nodes in the cluster. This tutorial uses the flannel virtual network.
+
+Enter the following:
+
+	    sudo kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+	    kubectl get pods --all-namespaces
+
+Worker Node Setup:
+
+	    sudo hostnamectl set-hostname worker01
+
+	    kubeadm join --discovery-token abcdef.1234567890abcdef --discovery-token-ca-cert-hash sha256:1234..cdef 1.2.3.4:6443
+
+	kubectl get nodes
+
+
+
+
+
