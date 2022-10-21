@@ -12,9 +12,9 @@ Command-line/terminal window (Ctrl–Alt–T)
 
 Step 1: Install Docker
 
-	    sudo apt-get update
+	    sudo apt-get update -y
 
-	    sudo apt-get install docker.io
+	    sudo apt-get install docker.io -y
 
 	    docker --version
 
@@ -29,13 +29,13 @@ To start Docker if it’s not running:
 
 Step 1: Install Kubernetes
 
-	    sudo apt-get install curl
+	    sudo apt-get install curl -y
 
 	    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add
 
 	    sudo apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
 
-	    sudo apt-get install kubeadm kubelet kubectl
+	    sudo apt-get install kubeadm kubelet kubectl-y
 
 	    sudo apt-mark hold kubeadm kubelet kubectl
 
