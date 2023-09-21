@@ -31,7 +31,22 @@ EKSCTL:
 
   eksctl create cluster --name my-eks-cluster --nodegroup-name my-worker-node --node-type t2.micro --nodes 3 --managed --region us-west-2
 
+============================================================================================================================================================================================================================
 
+eksctl create cluster -f cluster.yaml
+
+
+eksctl create cluster --name my-eks-cluster --nodegroup-name my-worker-node --node-type t2.medium --nodes 2 --managed --region us-east-1
+
+
+eksctl delete cluster --name my-eks-cluster --region us-east-1
+
+dcss
+
+eksctl get nodegroup --name $EKS_DEFAULT_MNG_NAME --cluster $EKS_CLUSTER_NAME
+
+
+eksctl scale nodegroup --name eks-ng --cluster basic-cluster --nodes 3 --nodes-min 3 --nodes-max 6 --region us-east-1
 
 
 
