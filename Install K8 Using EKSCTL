@@ -49,6 +49,30 @@ eksctl get nodegroup --name $EKS_DEFAULT_MNG_NAME --cluster $EKS_CLUSTER_NAME
 eksctl scale nodegroup --name eks-ng --cluster basic-cluster --nodes 3 --nodes-min 3 --nodes-max 6 --region us-east-1
 
 
+============================================================================================================================================================================================================================
+
+
+Reference:
+https://docs.aws.amazon.com/eks/latest/userguide/create-kubeconfig.html
+
+Open cloudshell
+
+# Type on your AWS CLI window 
+aws sts get-caller-identity
+# observe your account and user id details
+
+# Create a  kubeconfig file where it stores the credentials for EKS:
+# kubeconfig configuration allows you to connect to your cluster using the kubectl command line.
+aws eks update-kubeconfig --region region-code --name my-cluster
+ex: aws eks update-kubeconfig --region us-east-1 --name unus-eks-cluster-1 # Use the cluster name you just 
+created
+
+
+# see if you can get the nodes you created
+kubectl get nodes
+
+# Install nano editor in cloudshell. We will need this in the next task
+sudo yum install nano -y
 
 
 
