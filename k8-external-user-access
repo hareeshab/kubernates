@@ -1,0 +1,23 @@
+1. Create IAM user and provide the EKS access to user
+2. Modify the aws-auth configmap in your kube-system namespace. To do that, first run the command:
+   kubectl -n kube-system get configmap aws-auth -o yaml > aws-auth.yaml
+
+3. To add a new User, We will add below section in this yaml->
+
+mapUsers: |
+— userarn: arn:aws:iam::<Account-id>:user/<User-name>
+username: <User-name>
+groups:
+— system:masters
+
+5.aws eks update-kubeconfig — region <region> — name <name-of-your-cluster> — profile <aws-profile>
+
+This is it!! You can have your new User run the same command
+
+6. aws eks update-kubeconfig — region <region> — name <name-of-your-cluster> — profile <aws-profile>
+
+Ref: AWS profile creation 
+  https://yuthakarn.medium.com/connect-iam-user-to-eks-cluster-b76678e7deff
+
+Ref: Granting IAM User Access to Existing EKS Cluster: A Step-by-Step Guide
+  https://medium.com/@abhimanyubajaj98/granting-iam-user-access-to-existing-eks-cluster-a-step-by-step-guide-2e377d6ee4de
