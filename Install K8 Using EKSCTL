@@ -31,6 +31,8 @@ EKSCTL:
 
   sudo ./aws/install
 
+  aws --version
+
   eksctl create cluster --name my-eks-cluster --nodegroup-name my-worker-node --node-type t2.micro --nodes 3 --managed --region us-west-2
 
 ============================================================================================================================================================================================================================
