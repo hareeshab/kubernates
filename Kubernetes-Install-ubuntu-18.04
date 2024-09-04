@@ -71,7 +71,7 @@ A Pod Network is a way to allow communication between different nodes in the clu
 
 Enter the following:
 
-	    sudo kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+	    kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
 
 	    kubectl get pods --all-namespaces
 
