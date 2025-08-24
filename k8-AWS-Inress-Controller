@@ -1,0 +1,93 @@
+export CLUSTER=my-demo-cluster
+export REGION=us-east-1
+export ACCOUNT_ID=136311431139
+export POLICY_NAME=AWSLoadBalancerControllerIAMPolicy
+
+
+
+eksctl utils associate-iam-oidc-provider --cluster $CLUSTER --region $REGION --approve
+
+
+curl -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.1/docs/install/iam_policy.json
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam-policy.json
+
+
+
+eksctl create iamserviceaccount \
+  --cluster $CLUSTER \
+  --region $REGION \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --attach-policy-arn arn:aws:iam::$ACCOUNT_ID:policy/AWSLoadBalancerControllerIAMPolicy \
+  --override-existing-serviceaccounts \
+  --approve
+
+
+
+demo-application-test
+
+kubectl create deployment demo --image=public.ecr.aws/nginx/nginx:latest --port=80
+kubectl expose deployment demo --name=demo-svc --port=80 --target-port=80
+
+cat <<'EOF' | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: demo-ing
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: demo-svc
+            port:
+              number: 80
+EOF
+
+Get the DNS name::
+
+kubectl get ingress demo-ing -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'; echo
+
+------------------------------------------------------------------------------------------------
+
+any issues with inress :
+
+# 0) Set handy vars
+export REGION=ap-south-1
+export CLUSTER=<your-eks-cluster-name>
+export POLICY_NAME=AWSLoadBalancerControllerIAMPolicy
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# 1) Download the latest recommended policy JSON
+curl -o iam-policy.json \
+  https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+# (This JSON includes the newer *ListenerAttributes* permissions.)  # :contentReference[oaicite:1]{index=1}
+
+# 2) Find your existing policy ARN (created earlier)
+POLICY_ARN=$(aws iam list-policies --scope Local --query \
+  "Policies[?PolicyName=='${POLICY_NAME}'].Arn | [0]" --output text)
+
+# 3) Create a new version of that policy and set it as default
+aws iam create-policy-version \
+  --policy-arn "$POLICY_ARN" \
+  --policy-document file://iam-policy.json \
+  --set-as-default
+
+# 4) Restart the controller pods to pick up any cached STS creds
+kubectl -n kube-system rollout restart deployment aws-load-balancer-controller
+kubectl -n kube-system rollout status  deployment aws-load-balancer-controller
+
+
+
+
+
+
