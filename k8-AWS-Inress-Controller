@@ -59,7 +59,7 @@ kubectl get ingress demo-ing -o jsonpath='{.status.loadBalancer.ingress[0].hostn
 
 ------------------------------------------------------------------------------------------------
 
-any issues with inress :
+any issues with ingress :
 
 # 0) Set handy vars
 export REGION=ap-south-1
