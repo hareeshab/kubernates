@@ -13,15 +13,11 @@ EKSCTL:
 
 	KUBECTL:
 
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    sudo apt update
 
-   chmod +x kubectl
+    sudo snap install kubectl --classic
 
-   mkdir -p ~/.local/bin
-
-   mv ./kubectl ~/.local/bin/kubectl
-
-  kubectl version
+    kubectl version
 
 	AWS-CLI:
 
