@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+### === USER VARS (EDIT) =====================================================
+: "${CLUSTER:=banking}"
+: "${AWS_REGION:=us-east-1}"
+: "${DOCKERHUB_USER:=30051989}"
+: "${DOCKERHUB_TOKEN:=$TOKEN}"   # <-- put your Docker Hub access token here (no spaces)
+### ==========================================================================
+
+# --------------------------- PRE-REQ INSTALLER -------------------------------
+echo "==> Detecting OS / package manager..."
+OS_ID=""; PKG=""; ARCH="$(uname -m)"
+if [[ -f /etc/os-release ]]; then . /etc/os-release; OS_ID="${ID:-}"; fi
+if command -v apt-get >/dev/null 2>&1; then PKG="apt"; fi
+if command -v yum     >/dev/null 2>&1; then PKG="yum"; fi
+
+need_pkg() {
+  case "$PKG" in
+    apt) sudo apt-get update -y && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+    yum) sudo yum install -y "$@" ;;
+    *) echo "Unsupported package manager. Install deps manually."; exit 1 ;;
+  esac
+}
+
+install_awscli() {
+  echo "==> Installing AWS CLI v2..."
+  cd /tmp
+  case "$ARCH" in
+    x86_64) CLI_ZIP="awscli-exe-linux-x86_64.zip" ;;
+    aarch64|arm64) CLI_ZIP="awscli-exe-linux-aarch64.zip" ;;
+    *) echo "Unsupported arch for AWS CLI: $ARCH"; exit 1 ;;
+  esac
+  curl -fsSLo "$CLI_ZIP" "https://awscli.amazonaws.com/${CLI_ZIP}"
+  unzip -q "$CLI_ZIP"
+  sudo ./aws/install -i /usr/local/aws-cli -b /usr/local/bin
+  rm -rf /tmp/aws "$CLI_ZIP"
+  aws --version
+}
+
+install_kubectl() {
+  echo "==> Installing kubectl..."
+  cd /tmp
+  KVER="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+  case "$ARCH" in
+    x86_64) KARCH=amd64 ;;
+    aarch64|arm64) KARCH=arm64 ;;
+    *) echo "Unsupported arch for kubectl: $ARCH"; exit 1 ;;
+  esac
+  curl -fsSLO "https://dl.k8s.io/release/${KVER}/bin/linux/${KARCH}/kubectl"
+  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+  rm -f kubectl
+  kubectl version --client --output=yaml || true
+}
+
+install_eksctl() {
+  echo "==> Installing eksctl..."
+  case "$ARCH" in
+    x86_64) KARCH=amd64 ;;
+    aarch64|arm64) KARCH=arm64 ;;
+    *) echo "Unsupported arch for eksctl: $ARCH"; exit 1 ;;
+  esac
+  curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_${KARCH}.tar.gz" \
+   | sudo tar xz -C /usr/local/bin
+  eksctl version
+}
+
+install_helm() {
+  echo "==> Installing Helm 3..."
+  case "$ARCH" in
+    x86_64) HARCH=amd64 ;;
+    aarch64|arm64) HARCH=arm64 ;;
+    *) echo "Unsupported arch for Helm: $ARCH"; exit 1 ;;
+  esac
+  # Fetch latest tag from GitHub (requires jq)
+  HVER="$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)"
+  cd /tmp
+  curl -fsSLO "https://get.helm.sh/helm-${HVER}-linux-${HARCH}.tar.gz"
+  tar xzf "helm-${HVER}-linux-${HARCH}.tar.gz"
+  sudo install "linux-${HARCH}/helm" /usr/local/bin/helm
+  rm -rf "linux-${HARCH}" "helm-${HVER}-linux-${HARCH}.tar.gz"
+  helm version
+}
+
+# Base deps required by installers and later steps
+echo "==> Installing base utilities (curl, unzip, tar, jq, ca-certificates)..."
+if [[ "$PKG" == "apt" ]]; then need_pkg curl unzip tar jq ca-certificates; fi
+if [[ "$PKG" == "yum" ]]; then need_pkg curl unzip tar jq ca-certificates; fi
+
+# Install tools if missing
+command -v aws     >/dev/null 2>&1 || install_awscli
+command -v jq      >/dev/null 2>&1 || need_pkg jq
+command -v kubectl >/dev/null 2>&1 || install_kubectl
+command -v eksctl  >/dev/null 2>&1 || install_eksctl
+command -v helm    >/dev/null 2>&1 || install_helm
+
+echo "==> Tool versions:"
+aws --version || true
+eksctl version || true
+kubectl version --client --short || true
+helm version || true
+# ---------------------------------------------------------------------------
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing: $1"; exit 1; }; }
+for b in aws eksctl kubectl helm; do need "$b"; done
+
+echo "==> Using: CLUSTER=$CLUSTER REGION=$AWS_REGION DOCKERHUB_USER=$DOCKERHUB_USER"
+
+# -----------------------------------------------------------------------------
+# 0) Create EKS (idempotent-ish; skip if exists)
+# -----------------------------------------------------------------------------
+if ! aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
+  echo "==> Creating EKS cluster '$CLUSTER' in $AWS_REGION ..."
+  eksctl create cluster \
+    --name "$CLUSTER" \
+    --region "$AWS_REGION" \
+    --version 1.29 \
+    --nodegroup-name ng-1 \
+    --nodes 3 --nodes-min 3 --nodes-max 6 \
+    --managed
+else
+  echo "==> EKS cluster '$CLUSTER' already exists."
+fi
+
+aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION" >/dev/null
+kubectl get nodes -o wide
+
+# -----------------------------------------------------------------------------
+# 1) IRSA + EBS CSI add-on (uses IRSA SA we create)
+# -----------------------------------------------------------------------------
+echo "==> Associate OIDC provider for IRSA..."
+eksctl utils associate-iam-oidc-provider --cluster "$CLUSTER" --region "$AWS_REGION" --approve
+
+echo "==> Create IRSA ServiceAccount for EBS CSI (policy: AmazonEBSCSIDriverPolicy)..."
+eksctl create iamserviceaccount \
+  --cluster "$CLUSTER" \
+  --region  "$AWS_REGION" \
+  --namespace kube-system \
+  --name ebs-csi-controller-sa \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --override-existing-serviceaccounts || true
+
+ROLE_ARN=$(kubectl -n kube-system get sa ebs-csi-controller-sa -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}')
+echo "==> EBS CSI SA Role: $ROLE_ARN"
+
+echo "==> Install/Update aws-ebs-csi-driver add-on with IRSA..."
+aws eks create-addon \
+  --cluster-name "$CLUSTER" \
+  --addon-name aws-ebs-csi-driver \
+  --service-account-role-arn "$ROLE_ARN" \
+  --resolve-conflicts OVERWRITE >/dev/null 2>&1 || \
+aws eks update-addon \
+  --cluster-name "$CLUSTER" \
+  --addon-name aws-ebs-csi-driver \
+  --service-account-role-arn "$ROLE_ARN" \
+  --resolve-conflicts OVERWRITE >/dev/null
+
+kubectl -n kube-system get pods -l app.kubernetes.io/name=aws-ebs-csi-driver
+
+# -----------------------------------------------------------------------------
+# 2) gp3 default StorageClass (single default)
+# -----------------------------------------------------------------------------
+echo "==> Creating gp3 StorageClass as default..."
+cat <<'EOF' | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  fsType: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
+kubectl annotate sc gp2 storageclass.kubernetes.io/is-default-class- --overwrite 2>/dev/null || true
+kubectl get sc
+
+# -----------------------------------------------------------------------------
+# 3) AWS Load Balancer Controller with IRSA (broad policies for workshop)
+# -----------------------------------------------------------------------------
+echo "==> Create IRSA SA for aws-load-balancer-controller (broad AWS policies for speed)..."
+eksctl create iamserviceaccount \
+  --cluster "$CLUSTER" \
+  --region  "$AWS_REGION" \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --attach-policy-arn arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess \
+  --attach-policy-arn arn:aws:iam::aws:policy/AWSCertificateManagerFullAccess \
+  --attach-policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess \
+  --approve \
+  --override-existing-serviceaccounts || true
+
+helm repo add eks https://aws.github.io/eks-charts >/dev/null
+helm repo update >/dev/null
+VPC_ID=$(aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" \
+  --output json | jq -r '.cluster.resourcesVpcConfig.vpcId')
+echo "==> VPC_ID=$VPC_ID"
+
+echo "==> Install/Upgrade aws-load-balancer-controller to use the IRSA SA..."
+helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName="$CLUSTER" \
+  --set region="$AWS_REGION" \
+  --set vpcId="$VPC_ID" \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller
+
+kubectl -n kube-system rollout status deploy/aws-load-balancer-controller
